@@ -163,7 +163,7 @@
 </head>
 <body>
   <header>
-    <h1>My Todos</h1>
+    <h1>Road to 20k days</h1>
     <p>Saved automatically in your browser</p>
     <p class="today" id="todayLabel"></p>
   </header>
@@ -184,7 +184,7 @@
   // ---- Column config (identical to the screenshots) ----
   const COLUMNS = [
     { id: "now",   title: "Do Now",     color: "var(--red)",    period: "day"   },
-    { id: "later", title: "Do Later",   color: "var(--amber)",  period: "day"   },
+    { id: "later", title: "Tomorrow",   color: "var(--amber)",  period: "day"   },
     { id: "week",  title: "This Week",  color: "var(--blue)",   period: "week"  },
     { id: "month", title: "This Month", color: "var(--purple)", period: "month" }
   ];
@@ -232,7 +232,7 @@
   }
 
   // ---- Period rollover: MOVE (don't delete) unfinished tasks ----
-  // On a new day: incomplete "Do Now" tasks slide to "Do Later".
+  // On a new day: ALL "Tomorrow" tasks (done or not) become the new "Do Now".
   // On a new week: incomplete "This Week" tasks slide to "Do Later".
   // On a new month: incomplete "This Month" tasks slide to "This Week".
   // Completed tasks always get archived to history and cleared from the board.
@@ -254,7 +254,10 @@
       state.stamps.week = wk; changed = true;
     }
     if (state.stamps.day !== dk) {
-      moveUnfinished("now", "later");
+      // New day: archive completed "Do Now" tasks, then everything in
+      // "Tomorrow" (done or not) becomes the new "Do Now".
+      state.tasks.now = state.tasks.later.slice();
+      state.tasks.later = [];
       state.stamps.day = dk; changed = true;
     }
     if (changed) save();
@@ -355,7 +358,7 @@
   }
 
   const historyList = document.getElementById("historyList");
-  const colTitle = { now: "Do Now", later: "Do Later", week: "This Week", month: "This Month" };
+  const colTitle = { now: "Do Now", later: "Tomorrow", week: "This Week", month: "This Month" };
 
   function renderHistory() {
     historyList.innerHTML = "";
