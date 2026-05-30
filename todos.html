@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Todos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg1: #0a1f4d;
+    --bg2: #143a8a;
+    --card: rgba(255,255,255,0.04);
+    --card-border: rgba(255,255,255,0.10);
+    --input-bg: rgba(0,0,0,0.25);
+    --text: #eef2ff;
+    --muted: #9fb0d6;
+    --red: #ff3b5c;
+    --amber: #f5a623;
+    --blue: #2e9bff;
+    --purple: #8b5cf6;
+    --green: #34d399;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(120% 120% at 50% 0%, var(--bg2) 0%, var(--bg1) 60%, #06112e 100%);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 20px 60px;
+  }
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
+  header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .today { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) { .board { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .board { grid-template-columns: 1fr; } }
+
+  .col {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 16px 14px 18px;
+    backdrop-filter: blur(6px);
+  }
+  .col-head {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 14px;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+  .count {
+    margin-left: auto;
+    background: rgba(255,255,255,0.10);
+    color: var(--text);
+    font-size: 12px; font-weight: 700;
+    min-width: 24px; height: 24px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 7px;
+  }
+
+  .add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .add-row input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 11px 12px;
+    font-size: 14px;
+    outline: none;
+  }
+  .add-row input::placeholder { color: var(--muted); }
+  .add-row input:focus { border-color: var(--accent); }
+  .add-btn {
+    background: var(--accent);
+    border: none; border-radius: 10px;
+    color: #fff; font-size: 20px; font-weight: 700;
+    width: 44px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: filter .15s;
+  }
+  .add-btn:hover { filter: brightness(1.12); }
+
+  ul.tasks { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
+
+  li.task {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--card-border);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 11px 12px;
+  }
+  .cb {
+    appearance: none; -webkit-appearance: none;
+    width: 20px; height: 20px; flex: 0 0 auto;
+    border: 2px solid var(--muted); border-radius: 6px;
+    cursor: pointer; position: relative; background: transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .cb:checked { background: var(--blue); border-color: var(--blue); }
+  .cb:checked::after {
+    content: ""; position: absolute; left: 5px; top: 1px;
+    width: 6px; height: 11px; border: solid #fff;
+    border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .task .label { flex: 1; font-size: 14px; line-height: 1.3; }
+  .task.done .label { text-decoration: line-through; color: var(--muted); }
+  .del {
+    background: none; border: none; color: var(--muted);
+    font-size: 18px; cursor: pointer; line-height: 1;
+    padding: 2px 4px; border-radius: 6px; transition: color .15s, background .15s;
+  }
+  .del:hover { color: var(--red); background: rgba(255,59,92,0.12); }
+
+  /* History */
+  .history {
+    max-width: 1400px; margin: 34px auto 0;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 16px; padding: 18px 18px 8px;
+  }
+  .history h2 {
+    font-size: 17px; font-weight: 700; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .history h2 .dot { background: var(--green); }
+  .history .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .day-group { margin-bottom: 16px; }
+  .day-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; color: var(--muted);
+    text-transform: capitalize; margin-bottom: 8px;
+  }
+  .day-head .pill {
+    background: rgba(52,211,153,0.15); color: var(--green);
+    border-radius: 10px; padding: 2px 8px; font-size: 11px;
+  }
+  .hist-item {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--muted);
+    padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .hist-item .tick { color: var(--green); }
+  .hist-item .src { margin-left: auto; font-size: 11px; opacity: 0.7; }
+  .clear-hist {
+    background: none; border: 1px solid var(--card-border); color: var(--muted);
+    border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+    margin: 6px 0 12px;
+  }
+  .clear-hist:hover { color: var(--red); border-color: var(--red); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>My Todos</h1>
+    <p>Saved automatically in your browser</p>
+    <p class="today" id="todayLabel"></p>
+  </header>
+
+  <div class="board" id="board"></div>
+
+  <section class="history">
+    <h2><span class="dot"></span> Completed tasks</h2>
+    <p class="sub">Historial de todo lo que has terminado, agrupado por día</p>
+    <button class="clear-hist" id="clearHist">Borrar historial</button>
+    <div id="historyList"></div>
+  </section>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Column config (identical to the screenshots) ----
+  const COLUMNS = [
+    { id: "now",   title: "Do Now",     color: "var(--red)",    period: "day"   },
+    { id: "later", title: "Do Later",   color: "var(--amber)",  period: "day"   },
+    { id: "week",  title: "This Week",  color: "var(--blue)",   period: "week"  },
+    { id: "month", title: "This Month", color: "var(--purple)", period: "month" }
+  ];
+
+  const STORE_KEY = "myTodos.v1";
+
+  // ---- State ----
+  let state = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {
+      tasks: { now: [], later: [], week: [], month: [] },
+      history: [],            // { text, doneAt (ISO), col }
+      stamps: { day: "", week: "", month: "" }
+    };
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // ---- Date helpers ----
+  function todayKey(d) { d = d || new Date(); return d.toISOString().slice(0, 10); }
+  function weekKey(d) {
+    d = d || new Date();
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    const wk = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
+    return t.getUTCFullYear() + "-W" + String(wk).padStart(2, "0");
+  }
+  function monthKey(d) { d = d || new Date(); return d.toISOString().slice(0, 7); }
+
+  function prettyDay(iso) {
+    const d = new Date(iso + "T00:00:00");
+    const today = todayKey();
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    if (iso === today) return "Hoy";
+    if (iso === todayKey(y)) return "Ayer";
+    return d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  }
+
+  // ---- Period rollover: MOVE (don't delete) unfinished tasks ----
+  // On a new day: incomplete "Do Now" tasks slide to "Do Later".
+  // On a new week: incomplete "This Week" tasks slide to "Do Later".
+  // On a new month: incomplete "This Month" tasks slide to "This Week".
+  // Completed tasks always get archived to history and cleared from the board.
+  function rollover() {
+    const dk = todayKey(), wk = weekKey(), mk = monthKey();
+    let changed = false;
+
+    // First run: just set the stamps.
+    if (!state.stamps.day)   { state.stamps.day = dk;   changed = true; }
+    if (!state.stamps.week)  { state.stamps.week = wk;  changed = true; }
+    if (!state.stamps.month) { state.stamps.month = mk; changed = true; }
+
+    if (state.stamps.month !== mk) {
+      moveUnfinished("month", "week");
+      state.stamps.month = mk; changed = true;
+    }
+    if (state.stamps.week !== wk) {
+      moveUnfinished("week", "later");
+      state.stamps.week = wk; changed = true;
+    }
+    if (state.stamps.day !== dk) {
+      moveUnfinished("now", "later");
+      state.stamps.day = dk; changed = true;
+    }
+    if (changed) save();
+  }
+
+  function moveUnfinished(from, to) {
+    const keep = [];
+    state.tasks[from].forEach(t => {
+      if (!t.done) state.tasks[to].push(t);
+    });
+    // Drop everything from source (completed ones were archived on completion)
+    state.tasks[from] = keep;
+  }
+
+  // ---- Actions ----
+  function addTask(col, text) {
+    text = text.trim();
+    if (!text) return;
+    state.tasks[col].push({ id: Date.now() + "_" + Math.random().toString(36).slice(2,7), text, done: false });
+    save(); renderBoard();
+  }
+  function toggleTask(col, id) {
+    const t = state.tasks[col].find(x => x.id === id);
+    if (!t) return;
+    t.done = !t.done;
+    if (t.done) {
+      state.history.push({ text: t.text, doneAt: new Date().toISOString(), col });
+    } else {
+      // undo: remove the most recent matching history entry
+      for (let i = state.history.length - 1; i >= 0; i--) {
+        if (state.history[i].text === t.text && state.history[i].col === col) {
+          state.history.splice(i, 1); break;
+        }
+      }
+    }
+    save(); renderBoard(); renderHistory();
+  }
+  function deleteTask(col, id) {
+    state.tasks[col] = state.tasks[col].filter(x => x.id !== id);
+    save(); renderBoard();
+  }
+
+  // ---- Render ----
+  const board = document.getElementById("board");
+
+  function renderBoard() {
+    board.innerHTML = "";
+    COLUMNS.forEach(c => {
+      const list = state.tasks[c.id];
+      const pending = list.filter(t => !t.done).length;
+
+      const col = document.createElement("div");
+      col.className = "col";
+      col.style.setProperty("--accent", c.color);
+
+      const head = document.createElement("div");
+      head.className = "col-head";
+      head.innerHTML = '<span class="dot"></span>' + c.title +
+                       '<span class="count">' + pending + '</span>';
+      col.appendChild(head);
+
+      const addRow = document.createElement("div");
+      addRow.className = "add-row";
+      const input = document.createElement("input");
+      input.placeholder = "Add a task...";
+      const btn = document.createElement("button");
+      btn.className = "add-btn"; btn.textContent = "+";
+      btn.addEventListener("click", () => { addTask(c.id, input.value); input.value = ""; input.focus(); });
+      input.addEventListener("keydown", e => { if (e.key === "Enter") { addTask(c.id, input.value); input.value = ""; } });
+      addRow.appendChild(input); addRow.appendChild(btn);
+      col.appendChild(addRow);
+
+      const ul = document.createElement("ul");
+      ul.className = "tasks";
+      if (list.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty"; empty.textContent = "Nothing here";
+        ul.appendChild(empty);
+      } else {
+        list.forEach(t => {
+          const li = document.createElement("li");
+          li.className = "task" + (t.done ? " done" : "");
+          const cb = document.createElement("input");
+          cb.type = "checkbox"; cb.className = "cb"; cb.checked = t.done;
+          cb.addEventListener("change", () => toggleTask(c.id, t.id));
+          const label = document.createElement("span");
+          label.className = "label"; label.textContent = t.text;
+          const del = document.createElement("button");
+          del.className = "del"; del.innerHTML = "&times;";
+          del.addEventListener("click", () => deleteTask(c.id, t.id));
+          li.appendChild(cb); li.appendChild(label); li.appendChild(del);
+          ul.appendChild(li);
+        });
+      }
+      col.appendChild(ul);
+      board.appendChild(col);
+    });
+  }
+
+  const historyList = document.getElementById("historyList");
+  const colTitle = { now: "Do Now", later: "Do Later", week: "This Week", month: "This Month" };
+
+  function renderHistory() {
+    historyList.innerHTML = "";
+    if (!state.history.length) {
+      historyList.innerHTML = '<p class="empty">Aún no has completado ninguna tarea</p>';
+      return;
+    }
+    const groups = {};
+    state.history.forEach(h => {
+      const day = h.doneAt.slice(0, 10);
+      (groups[day] = groups[day] || []).push(h);
+    });
+    Object.keys(groups).sort().reverse().forEach(day => {
+      const items = groups[day];
+      const g = document.createElement("div");
+      g.className = "day-group";
+      const head = document.createElement("div");
+      head.className = "day-head";
+      head.innerHTML = prettyDay(day) + '<span class="pill">' + items.length + '</span>';
+      g.appendChild(head);
+      items.slice().reverse().forEach(h => {
+        const row = document.createElement("div");
+        row.className = "hist-item";
+        const time = new Date(h.doneAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+        row.innerHTML = '<span class="tick">&#10003;</span>' +
+                        '<span>' + escapeHtml(h.text) + '</span>' +
+                        '<span class="src">' + (colTitle[h.col] || "") + ' &middot; ' + time + '</span>';
+        g.appendChild(row);
+      });
+      historyList.appendChild(g);
+    });
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  document.getElementById("clearHist").addEventListener("click", () => {
+    if (confirm("¿Borrar todo el historial de tareas completadas?")) {
+      state.history = []; save(); renderHistory();
+    }
+  });
+
+  function setTodayLabel() {
+    document.getElementById("todayLabel").textContent =
+      new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+
+  // ---- Init ----
+  rollover();
+  setTodayLabel();
+  renderBoard();
+  renderHistory();
+
+  // Re-check the date if the tab stays open across midnight (every 60s)
+  setInterval(() => { rollover(); setTodayLabel(); renderBoard(); renderHistory(); }, 60000);
+})();
+</script>
+</body>
+</html>
