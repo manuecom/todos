@@ -189,6 +189,30 @@
   .score-row .stat.ok { color: var(--green); }
   .score-row .stat.bad { color: var(--red); }
   .score-row .rate { margin-left: auto; font-size: 13px; color: var(--muted); }
+
+  .month-card {
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding-bottom: 12px; margin-bottom: 12px;
+  }
+  .month-card:last-child { border-bottom: none; margin-bottom: 0; }
+  .month-label {
+    font-size: 16px; font-weight: 700; margin-bottom: 8px;
+  }
+  .sub-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  }
+  @media (max-width: 620px) { .sub-grid { grid-template-columns: 1fr; } }
+  .sub-row {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 8px 12px;
+  }
+  .sub-row .sub-name { font-size: 13px; font-weight: 700; color: var(--muted); min-width: 78px; }
+  .sub-row .stat { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .sub-row .stat.ok { color: var(--green); }
+  .sub-row .stat.bad { color: var(--red); }
+  .sub-row .rate { margin-left: auto; font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -283,7 +307,7 @@
     const y = new Date(); y.setDate(y.getDate() - 1);
     if (iso === today) return "Hoy";
     if (iso === todayKey(y)) return "Ayer";
-    return d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+    return d.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" });
   }
 
   // ---- Period rollover ----
@@ -503,38 +527,67 @@
     });
   }
 
-  // ---- Monthly score: completed (green) vs missed (red) per month ----
+  // ---- Monthly score: broken down by goal type ----
+  // Monthly goals (col 'month') are primary; then weekly ('week'); then daily ('now'+'later').
   const scoreList = document.getElementById("scoreList");
+
+  function typeOf(col) {
+    if (col === "month") return "monthly";
+    if (col === "week")  return "weekly";
+    return "daily"; // now + later
+  }
 
   function renderScore() {
     scoreList.innerHTML = "";
     const months = {};
-    state.history.forEach(h => {
-      const m = h.doneAt.slice(0, 7);
-      (months[m] = months[m] || { ok: 0, bad: 0 }).ok++;
-    });
-    state.missed.forEach(h => {
-      const m = h.missedAt.slice(0, 7);
-      (months[m] = months[m] || { ok: 0, bad: 0 }).bad++;
-    });
+    function bucket(m) {
+      return months[m] || (months[m] = {
+        monthly: { ok: 0, bad: 0 },
+        weekly:  { ok: 0, bad: 0 },
+        daily:   { ok: 0, bad: 0 }
+      });
+    }
+    state.history.forEach(h => { bucket(h.doneAt.slice(0, 7))[typeOf(h.col)].ok++; });
+    state.missed.forEach(h => { bucket(h.missedAt.slice(0, 7))[typeOf(h.col)].bad++; });
+
     const keys = Object.keys(months).sort().reverse();
     if (!keys.length) {
       scoreList.innerHTML = '<p class="empty">Aún no hay datos este mes</p>';
       return;
     }
-    keys.forEach(m => {
-      const s = months[m];
+
+    function statLine(label, s) {
       const total = s.ok + s.bad;
       const rate = total ? Math.round((s.ok / total) * 100) : 0;
-      const label = new Date(m + "-01T00:00:00").toLocaleDateString("es-ES", { month: "long", year: "numeric" });
-      const row = document.createElement("div");
-      row.className = "score-row";
-      row.innerHTML =
-        '<span class="m-name">' + label + '</span>' +
-        '<span class="stat ok">' + s.ok + ' &#10003;</span>' +
-        '<span class="stat bad">' + s.bad + ' &times;</span>' +
-        '<span class="rate">' + rate + '% completado</span>';
-      scoreList.appendChild(row);
+      return '<span class="sub-name">' + label + '</span>' +
+             '<span class="stat ok">' + s.ok + ' &#10003;</span>' +
+             '<span class="stat bad">' + s.bad + ' &times;</span>' +
+             '<span class="rate">' + rate + '%</span>';
+    }
+
+    keys.forEach(m => {
+      const d = months[m];
+      const label = new Date(m + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+      const card = document.createElement("div");
+      card.className = "month-card";
+
+      const head = document.createElement("div");
+      head.className = "month-label";
+      head.textContent = label;
+      card.appendChild(head);
+
+      const grid = document.createElement("div");
+      grid.className = "sub-grid";
+      [["Mensual", d.monthly], ["Semanales", d.weekly], ["Diarios", d.daily]].forEach(pair => {
+        const row = document.createElement("div");
+        row.className = "sub-row";
+        row.innerHTML = statLine(pair[0], pair[1]);
+        grid.appendChild(row);
+      });
+      card.appendChild(grid);
+
+      scoreList.appendChild(card);
     });
   }
 
@@ -552,7 +605,7 @@
 
   function setTodayLabel() {
     document.getElementById("todayLabel").textContent =
-      new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+      new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   }
 
   // ---- Init ----
