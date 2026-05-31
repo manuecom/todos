@@ -28,7 +28,7 @@
     padding: 32px 20px 60px;
   }
   header { text-align: center; margin-bottom: 28px; }
-  header h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
+  header h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.5px; }
   header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
   .today { color: var(--muted); font-size: 13px; margin-top: 8px; }
 
@@ -159,11 +159,41 @@
     margin: 6px 0 12px;
   }
   .clear-hist:hover { color: var(--red); border-color: var(--red); }
+
+  /* Incomplete (mirror of history, in red) */
+  .history h2 .dot.red { background: var(--red); }
+  .hist-item .cross { color: var(--red); }
+  .day-head .pill.red { background: rgba(255,59,92,0.15); color: var(--red); }
+
+  /* Monthly score summary */
+  .month-score {
+    max-width: 1400px; margin: 34px auto 0;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 16px; padding: 18px 18px 14px;
+  }
+  .month-score h2 {
+    font-size: 17px; font-weight: 700; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .month-score h2 .dot { background: var(--blue); }
+  .month-score .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .score-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 4px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .score-row .m-name {
+    font-size: 14px; font-weight: 700; text-transform: capitalize;
+    min-width: 150px;
+  }
+  .score-row .stat { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; }
+  .score-row .stat.ok { color: var(--green); }
+  .score-row .stat.bad { color: var(--red); }
+  .score-row .rate { margin-left: auto; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
   <header>
-    <h1>Road to 20k days</h1>
+    <h1>Road to 20k Days</h1>
     <p>Saved automatically in your browser</p>
     <p class="today" id="todayLabel"></p>
   </header>
@@ -175,6 +205,19 @@
     <p class="sub">Historial de todo lo que has terminado, agrupado por día</p>
     <button class="clear-hist" id="clearHist">Borrar historial</button>
     <div id="historyList"></div>
+  </section>
+
+  <section class="history">
+    <h2><span class="dot red"></span> Incomplete tasks</h2>
+    <p class="sub">Tareas que no terminaste dentro de su periodo, agrupadas por día</p>
+    <button class="clear-hist" id="clearMissed">Borrar historial</button>
+    <div id="missedList"></div>
+  </section>
+
+  <section class="month-score">
+    <h2><span class="dot"></span> Monthly progress</h2>
+    <p class="sub">Aciertos vs fallos por mes — para ver tu mejora</p>
+    <div id="scoreList"></div>
   </section>
 
 <script>
@@ -197,11 +240,16 @@
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (!s.missed) s.missed = [];   // migrate older saves
+        return s;
+      }
     } catch (e) {}
     return {
       tasks: { now: [], later: [], week: [], month: [] },
       history: [],            // { text, doneAt (ISO), col }
+      missed: [],             // { text, missedAt (ISO), col }
       stamps: { day: "", week: "", month: "" }
     };
   }
@@ -209,18 +257,25 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
   }
 
-  // ---- Date helpers ----
-  function todayKey(d) { d = d || new Date(); return d.toISOString().slice(0, 10); }
+  // ---- Date helpers (LOCAL device time, so rollovers happen at YOUR 00:00) ----
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function todayKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
   function weekKey(d) {
     d = d || new Date();
-    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const day = t.getUTCDay() || 7;
-    t.setUTCDate(t.getUTCDate() + 4 - day);
-    const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const day = t.getDay() || 7;            // local weekday, Mon=1..Sun=7
+    t.setDate(t.getDate() + 4 - day);       // ISO: Thursday of this week
+    const yearStart = new Date(t.getFullYear(), 0, 1);
     const wk = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
-    return t.getUTCFullYear() + "-W" + String(wk).padStart(2, "0");
+    return t.getFullYear() + "-W" + pad(wk);
   }
-  function monthKey(d) { d = d || new Date(); return d.toISOString().slice(0, 7); }
+  function monthKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  }
 
   function prettyDay(iso) {
     const d = new Date(iso + "T00:00:00");
@@ -231,11 +286,13 @@
     return d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   }
 
-  // ---- Period rollover: MOVE (don't delete) unfinished tasks ----
-  // On a new day: ALL "Tomorrow" tasks (done or not) become the new "Do Now".
-  // On a new week: incomplete "This Week" tasks slide to "Do Later".
-  // On a new month: incomplete "This Month" tasks slide to "This Week".
-  // Completed tasks always get archived to history and cleared from the board.
+  // ---- Period rollover ----
+  // On a new day: incomplete "Do Now" AND "Tomorrow" tasks are logged as missed,
+  //   then ALL of them (Do Now incompletes + everything in Tomorrow) become the
+  //   new "Do Now". Tomorrow empties.
+  // On a new week: incomplete "This Week" tasks are logged as missed, then slide to Tomorrow.
+  // On a new month: incomplete "This Month" tasks are logged as missed, then slide to This Week.
+  // Completed tasks are archived to history when checked.
   function rollover() {
     const dk = todayKey(), wk = weekKey(), mk = monthKey();
     let changed = false;
@@ -246,21 +303,36 @@
     if (!state.stamps.month) { state.stamps.month = mk; changed = true; }
 
     if (state.stamps.month !== mk) {
+      logMissed("month");
       moveUnfinished("month", "week");
       state.stamps.month = mk; changed = true;
     }
     if (state.stamps.week !== wk) {
+      logMissed("week");
       moveUnfinished("week", "later");
       state.stamps.week = wk; changed = true;
     }
     if (state.stamps.day !== dk) {
-      // New day: archive completed "Do Now" tasks, then everything in
-      // "Tomorrow" (done or not) becomes the new "Do Now".
-      state.tasks.now = state.tasks.later.slice();
+      // Log everything still unchecked in Do Now and Tomorrow as missed for the day.
+      logMissed("now");
+      logMissed("later");
+      // Carry over: incomplete Do Now stay, plus all of Tomorrow, into the new Do Now.
+      const carried = state.tasks.now.filter(t => !t.done);
+      // reset done flag so carried tasks start fresh
+      const fresh = carried.concat(state.tasks.later).map(t => ({ id: t.id, text: t.text, done: false }));
+      state.tasks.now = fresh;
       state.tasks.later = [];
       state.stamps.day = dk; changed = true;
     }
     if (changed) save();
+  }
+
+  // Record every still-unchecked task in a column as a "missed" entry.
+  function logMissed(col) {
+    const now = new Date().toISOString();
+    state.tasks[col].forEach(t => {
+      if (!t.done) state.missed.push({ text: t.text, missedAt: now, col });
+    });
   }
 
   function moveUnfinished(from, to) {
@@ -293,7 +365,7 @@
         }
       }
     }
-    save(); renderBoard(); renderHistory();
+    save(); renderBoard(); renderHistory(); renderScore();
   }
   function deleteTask(col, id) {
     state.tasks[col] = state.tasks[col].filter(x => x.id !== id);
@@ -396,9 +468,85 @@
     return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
 
+  // ---- Incomplete tasks (mirror of history, in red) ----
+  const missedList = document.getElementById("missedList");
+
+  function renderMissed() {
+    missedList.innerHTML = "";
+    if (!state.missed.length) {
+      missedList.innerHTML = '<p class="empty">No tienes tareas incompletas registradas</p>';
+      return;
+    }
+    const groups = {};
+    state.missed.forEach(h => {
+      const day = h.missedAt.slice(0, 10);
+      (groups[day] = groups[day] || []).push(h);
+    });
+    Object.keys(groups).sort().reverse().forEach(day => {
+      const items = groups[day];
+      const g = document.createElement("div");
+      g.className = "day-group";
+      const head = document.createElement("div");
+      head.className = "day-head";
+      head.innerHTML = prettyDay(day) + '<span class="pill red">' + items.length + '</span>';
+      g.appendChild(head);
+      items.slice().reverse().forEach(h => {
+        const row = document.createElement("div");
+        row.className = "hist-item";
+        const time = new Date(h.missedAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+        row.innerHTML = '<span class="cross">&times;</span>' +
+                        '<span>' + escapeHtml(h.text) + '</span>' +
+                        '<span class="src">' + (colTitle[h.col] || "") + ' &middot; ' + time + '</span>';
+        g.appendChild(row);
+      });
+      missedList.appendChild(g);
+    });
+  }
+
+  // ---- Monthly score: completed (green) vs missed (red) per month ----
+  const scoreList = document.getElementById("scoreList");
+
+  function renderScore() {
+    scoreList.innerHTML = "";
+    const months = {};
+    state.history.forEach(h => {
+      const m = h.doneAt.slice(0, 7);
+      (months[m] = months[m] || { ok: 0, bad: 0 }).ok++;
+    });
+    state.missed.forEach(h => {
+      const m = h.missedAt.slice(0, 7);
+      (months[m] = months[m] || { ok: 0, bad: 0 }).bad++;
+    });
+    const keys = Object.keys(months).sort().reverse();
+    if (!keys.length) {
+      scoreList.innerHTML = '<p class="empty">Aún no hay datos este mes</p>';
+      return;
+    }
+    keys.forEach(m => {
+      const s = months[m];
+      const total = s.ok + s.bad;
+      const rate = total ? Math.round((s.ok / total) * 100) : 0;
+      const label = new Date(m + "-01T00:00:00").toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+      const row = document.createElement("div");
+      row.className = "score-row";
+      row.innerHTML =
+        '<span class="m-name">' + label + '</span>' +
+        '<span class="stat ok">' + s.ok + ' &#10003;</span>' +
+        '<span class="stat bad">' + s.bad + ' &times;</span>' +
+        '<span class="rate">' + rate + '% completado</span>';
+      scoreList.appendChild(row);
+    });
+  }
+
   document.getElementById("clearHist").addEventListener("click", () => {
     if (confirm("¿Borrar todo el historial de tareas completadas?")) {
-      state.history = []; save(); renderHistory();
+      state.history = []; save(); renderHistory(); renderScore();
+    }
+  });
+
+  document.getElementById("clearMissed").addEventListener("click", () => {
+    if (confirm("¿Borrar todo el historial de tareas incompletas?")) {
+      state.missed = []; save(); renderMissed(); renderScore();
     }
   });
 
@@ -412,9 +560,14 @@
   setTodayLabel();
   renderBoard();
   renderHistory();
+  renderMissed();
+  renderScore();
 
   // Re-check the date if the tab stays open across midnight (every 60s)
-  setInterval(() => { rollover(); setTodayLabel(); renderBoard(); renderHistory(); }, 60000);
+  setInterval(() => {
+    rollover(); setTodayLabel(); renderBoard();
+    renderHistory(); renderMissed(); renderScore();
+  }, 60000);
 })();
 </script>
 </body>
