@@ -311,61 +311,55 @@
   }
 
   // ---- Period rollover ----
-  // On a new day: incomplete "Do Now" AND "Tomorrow" tasks are logged as missed,
-  //   then ALL of them (Do Now incompletes + everything in Tomorrow) become the
-  //   new "Do Now". Tomorrow empties.
-  // On a new week: incomplete "This Week" tasks are logged as missed, then slide to Tomorrow.
-  // On a new month: incomplete "This Month" tasks are logged as missed, then slide to This Week.
-  // Completed tasks are archived to history when checked.
+  // Reglas:
+  // - Tomorrow: en cambio de día, TODO pasa a Do Now (hecho o no, es organización).
+  //   Tomorrow NUNCA cuenta como incompleto.
+  // - Do Now: al final del día, lo no hecho SE QUEDA en Do Now y se registra como
+  //   incompleto de ese día (cada día sin hacer cuenta de nuevo, hasta que se haga).
+  // - This Week: al final de la semana, lo no hecho se registra como incompleto y
+  //   DESAPARECE (no se mantiene, no pasa a otra columna).
+  // - This Month: al final del mes, lo no hecho se registra como incompleto y DESAPARECE.
+  // Las tareas completadas se archivan en history al marcarlas.
   function rollover() {
     const dk = todayKey(), wk = weekKey(), mk = monthKey();
     let changed = false;
 
-    // First run: just set the stamps.
+    // Primera ejecución: solo fija los sellos de fecha.
     if (!state.stamps.day)   { state.stamps.day = dk;   changed = true; }
     if (!state.stamps.week)  { state.stamps.week = wk;  changed = true; }
     if (!state.stamps.month) { state.stamps.month = mk; changed = true; }
 
     if (state.stamps.month !== mk) {
       logMissed("month");
-      moveUnfinished("month", "week");
+      state.tasks.month = [];          // desaparece
       state.stamps.month = mk; changed = true;
     }
     if (state.stamps.week !== wk) {
       logMissed("week");
-      moveUnfinished("week", "later");
+      state.tasks.week = [];           // desaparece
       state.stamps.week = wk; changed = true;
     }
     if (state.stamps.day !== dk) {
-      // Log everything still unchecked in Do Now and Tomorrow as missed for the day.
+      // Do Now no hecho: se registra como incompleto del día y SE QUEDA en Do Now.
       logMissed("now");
-      logMissed("later");
-      // Carry over: incomplete Do Now stay, plus all of Tomorrow, into the new Do Now.
-      const carried = state.tasks.now.filter(t => !t.done);
-      // reset done flag so carried tasks start fresh
-      const fresh = carried.concat(state.tasks.later).map(t => ({ id: t.id, text: t.text, done: false }));
-      state.tasks.now = fresh;
+      const stay = state.tasks.now.filter(t => !t.done)
+                     .map(t => ({ id: t.id, text: t.text, done: false }));
+      // Tomorrow: todo pasa a Do Now (organización, no cuenta como incompleto).
+      const fromTomorrow = state.tasks.later
+                     .map(t => ({ id: t.id, text: t.text, done: false }));
+      state.tasks.now = stay.concat(fromTomorrow);
       state.tasks.later = [];
       state.stamps.day = dk; changed = true;
     }
     if (changed) save();
   }
 
-  // Record every still-unchecked task in a column as a "missed" entry.
+  // Registra cada tarea aún sin marcar de una columna como "incompleta".
   function logMissed(col) {
     const now = new Date().toISOString();
     state.tasks[col].forEach(t => {
       if (!t.done) state.missed.push({ text: t.text, missedAt: now, col });
     });
-  }
-
-  function moveUnfinished(from, to) {
-    const keep = [];
-    state.tasks[from].forEach(t => {
-      if (!t.done) state.tasks[to].push(t);
-    });
-    // Drop everything from source (completed ones were archived on completion)
-    state.tasks[from] = keep;
   }
 
   // ---- Actions ----
@@ -534,7 +528,8 @@
   function typeOf(col) {
     if (col === "month") return "monthly";
     if (col === "week")  return "weekly";
-    return "daily"; // now + later
+    if (col === "now")   return "daily";
+    return null; // 'later' (Tomorrow) is organization only — not scored
   }
 
   function renderScore() {
@@ -547,8 +542,8 @@
         daily:   { ok: 0, bad: 0 }
       });
     }
-    state.history.forEach(h => { bucket(h.doneAt.slice(0, 7))[typeOf(h.col)].ok++; });
-    state.missed.forEach(h => { bucket(h.missedAt.slice(0, 7))[typeOf(h.col)].bad++; });
+    state.history.forEach(h => { const t = typeOf(h.col); if (t) bucket(h.doneAt.slice(0, 7))[t].ok++; });
+    state.missed.forEach(h => { const t = typeOf(h.col); if (t) bucket(h.missedAt.slice(0, 7))[t].bad++; });
 
     const keys = Object.keys(months).sort().reverse();
     if (!keys.length) {
