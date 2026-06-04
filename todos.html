@@ -128,7 +128,7 @@
   .history {
     max-width: 1400px; margin: 34px auto 0;
     background: var(--card); border: 1px solid var(--card-border);
-    border-radius: 16px; padding: 18px 18px 8px;
+    border-radius: 16px; padding: 18px 18px 4px;
   }
   .history h2 {
     font-size: 17px; font-weight: 700; margin-bottom: 4px;
@@ -159,6 +159,32 @@
     margin: 6px 0 12px;
   }
   .clear-hist:hover { color: var(--red); border-color: var(--red); }
+
+  /* Collapsible history lists */
+  .history h2 .expand-btn { margin-left: auto; }
+  .hist-wrap { position: relative; }
+  .hist-clip { overflow: hidden; }
+  .hist-wrap.collapsed .hist-clip { max-height: 104px; }   /* ~1.5 tasks */
+  .hist-wrap .fade {
+    position: absolute; left: -18px; right: -18px; bottom: -4px; height: 92px;
+    background: linear-gradient(to bottom, rgba(10,28,70,0) 0%, rgba(10,28,70,0.95) 85%, rgba(10,28,70,1) 100%);
+    border-radius: 0 0 16px 16px;
+    pointer-events: none;
+    display: none;
+  }
+  .hist-wrap.collapsed .fade { display: block; }
+  .hist-clip .day-group:last-child { margin-bottom: 0; }
+  .hist-clip .day-group:last-child .hist-item:last-child { border-bottom: none; }
+  .expand-btn {
+    display: none;
+    background: none; border: none; padding: 4px;
+    color: var(--muted); cursor: pointer;
+    align-items: center; justify-content: center;
+    transition: transform .25s ease, color .15s;
+  }
+  .expand-btn.visible { display: flex; }
+  .expand-btn:hover { color: var(--text); }
+  .expand-btn.open { transform: rotate(180deg); }
 
   /* Incomplete (mirror of history, in red) */
   .history h2 .dot.red { background: var(--red); }
@@ -225,17 +251,31 @@
   <div class="board" id="board"></div>
 
   <section class="history">
-    <h2><span class="dot"></span> Completed tasks</h2>
+    <h2><span class="dot"></span> Completed tasks
+      <button class="expand-btn" id="historyToggle" title="Ver todo">
+        <svg width="18" height="10" viewBox="0 0 18 10"><path d="M2 2 L9 8 L16 2" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </h2>
     <p class="sub">Historial de todo lo que has terminado, agrupado por día</p>
     <button class="clear-hist" id="clearHist">Borrar historial</button>
-    <div id="historyList"></div>
+    <div class="hist-wrap collapsed" id="historyWrap">
+      <div class="hist-clip"><div id="historyList"></div></div>
+      <div class="fade"></div>
+    </div>
   </section>
 
   <section class="history">
-    <h2><span class="dot red"></span> Incomplete tasks</h2>
+    <h2><span class="dot red"></span> Incomplete tasks
+      <button class="expand-btn" id="missedToggle" title="Ver todo">
+        <svg width="18" height="10" viewBox="0 0 18 10"><path d="M2 2 L9 8 L16 2" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </h2>
     <p class="sub">Tareas que no terminaste dentro de su periodo, agrupadas por día</p>
     <button class="clear-hist" id="clearMissed">Borrar historial</button>
-    <div id="missedList"></div>
+    <div class="hist-wrap collapsed" id="missedWrap">
+      <div class="hist-clip"><div id="missedList"></div></div>
+      <div class="fade"></div>
+    </div>
   </section>
 
   <section class="month-score">
@@ -450,14 +490,22 @@
   const historyList = document.getElementById("historyList");
   const colTitle = { now: "Do Now", later: "Tomorrow", week: "This Week", month: "This Month" };
 
+  // Solo se MUESTRAN las entradas de la semana actual; todas siguen guardadas
+  // y cuentan en Monthly progress.
+  function isThisWeek(isoDateTime) {
+    return weekKey(new Date(isoDateTime)) === weekKey();
+  }
+
   function renderHistory() {
     historyList.innerHTML = "";
-    if (!state.history.length) {
-      historyList.innerHTML = '<p class="empty">Aún no has completado ninguna tarea</p>';
+    const week = state.history.filter(h => isThisWeek(h.doneAt));
+    if (!week.length) {
+      historyList.innerHTML = '<p class="empty">Aún no has completado ninguna tarea esta semana</p>';
+      updateCollapse("historyWrap", "historyToggle");
       return;
     }
     const groups = {};
-    state.history.forEach(h => {
+    week.forEach(h => {
       const day = h.doneAt.slice(0, 10);
       (groups[day] = groups[day] || []).push(h);
     });
@@ -480,6 +528,7 @@
       });
       historyList.appendChild(g);
     });
+    updateCollapse("historyWrap", "historyToggle");
   }
 
   function escapeHtml(s) {
@@ -491,12 +540,14 @@
 
   function renderMissed() {
     missedList.innerHTML = "";
-    if (!state.missed.length) {
-      missedList.innerHTML = '<p class="empty">No tienes tareas incompletas registradas</p>';
+    const week = state.missed.filter(h => isThisWeek(h.missedAt));
+    if (!week.length) {
+      missedList.innerHTML = '<p class="empty">No tienes tareas incompletas esta semana</p>';
+      updateCollapse("missedWrap", "missedToggle");
       return;
     }
     const groups = {};
-    state.missed.forEach(h => {
+    week.forEach(h => {
       const day = h.missedAt.slice(0, 10);
       (groups[day] = groups[day] || []).push(h);
     });
@@ -519,7 +570,37 @@
       });
       missedList.appendChild(g);
     });
+    updateCollapse("missedWrap", "missedToggle");
   }
+
+  // ---- Collapse/expand for history sections ----
+  // Shows the arrow only when content overflows the collapsed height.
+  function updateCollapse(wrapId, btnId) {
+    const wrap = document.getElementById(wrapId);
+    const clip = wrap.querySelector(".hist-clip");
+    const btn = document.getElementById(btnId);
+    const isOpen = btn.classList.contains("open");
+    if (isOpen) {
+      wrap.classList.remove("collapsed");
+      btn.classList.add("visible");
+      return;
+    }
+    wrap.classList.add("collapsed");
+    // overflow check: content taller than collapsed height?
+    const overflowing = clip.scrollHeight > clip.clientHeight + 2;
+    btn.classList.toggle("visible", overflowing);
+    if (!overflowing) wrap.classList.remove("collapsed");
+  }
+
+  function setupToggle(wrapId, btnId) {
+    const btn = document.getElementById(btnId);
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("open");
+      updateCollapse(wrapId, btnId);
+    });
+  }
+  setupToggle("historyWrap", "historyToggle");
+  setupToggle("missedWrap", "missedToggle");
 
   // ---- Monthly score: broken down by goal type ----
   // Monthly goals (col 'month') are primary; then weekly ('week'); then daily ('now'+'later').
